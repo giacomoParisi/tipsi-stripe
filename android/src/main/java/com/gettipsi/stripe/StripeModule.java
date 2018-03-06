@@ -72,7 +72,6 @@ import java.util.concurrent.TimeUnit;
 
 public class StripeModule extends ReactContextBaseJavaModule {
 
-
   private static final String TAG = "### StripeModule: ";
   private static final String MODULE_NAME = "StripeModule";
 
@@ -144,6 +143,8 @@ public class StripeModule extends ReactContextBaseJavaModule {
         } else {
           super.onActivityResult(activity, requestCode, resultCode, data);
         }
+      } else {
+        Log.e(TAG, "payPromise == null");
       }
     }
   };
