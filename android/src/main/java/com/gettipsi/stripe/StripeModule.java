@@ -68,8 +68,6 @@ import java.util.Map;
 import java.util.List;
 import java.util.ArrayList;
 
-import java.util.concurrent.TimeUnit;
-
 public class StripeModule extends ReactContextBaseJavaModule {
 
   private static final String TAG = "### StripeModule: ";
@@ -172,17 +170,7 @@ public class StripeModule extends ReactContextBaseJavaModule {
     }
 
     publicKey = options.getString("publishableKey");
-    int delay = options.getInt("delay");
-    Log.d(TAG, "init -> publicKey:" + publicKey);
     stripe = new Stripe(getReactApplicationContext(), publicKey);
-    Log.d(TAG, "BEFORE init");
-    try{
-      Log.e(TAG, "DELAY: " + delay);
-      TimeUnit.SECONDS.sleep(delay);
-    } catch (InterruptedException exception) {
-      Log.e(TAG, "Err: " + exception);
-    }
-    Log.d(TAG, "AFTER init");
   }
 
   @ReactMethod
