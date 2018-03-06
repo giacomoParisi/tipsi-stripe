@@ -176,6 +176,7 @@ public class StripeModule extends ReactContextBaseJavaModule {
     stripe = new Stripe(getReactApplicationContext(), publicKey);
     Log.d(TAG, "BEFORE init");
     try{
+      Log.e(TAG, "DELAY: " + delay);
       TimeUnit.SECONDS.sleep(delay);
     } catch (InterruptedException exception) {
       Log.e(TAG, "Err: " + exception);
