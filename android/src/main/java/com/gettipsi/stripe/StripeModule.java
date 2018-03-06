@@ -171,7 +171,7 @@ public class StripeModule extends ReactContextBaseJavaModule {
     }
 
     publicKey = options.getString("publishableKey");
-    int delay = options.getInteger("delay");
+    int delay = options.getInt("delay");
     Log.d(TAG, "init -> publicKey:" + publicKey);
     stripe = new Stripe(getReactApplicationContext(), publicKey);
     Log.d(TAG, "BEFORE init");
