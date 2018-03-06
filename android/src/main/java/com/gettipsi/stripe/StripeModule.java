@@ -68,6 +68,8 @@ import java.util.Map;
 import java.util.List;
 import java.util.ArrayList;
 
+import java.util.concurrent.TimeUnit;
+
 public class StripeModule extends ReactContextBaseJavaModule {
 
 
@@ -171,6 +173,7 @@ public class StripeModule extends ReactContextBaseJavaModule {
     publicKey = options.getString("publishableKey");
     Log.d(TAG, "init -> publicKey:" + publicKey);
     stripe = new Stripe(getReactApplicationContext(), publicKey);
+    TimeUnit.SECONDS.sleep(5);
   }
 
   @ReactMethod
