@@ -173,7 +173,12 @@ public class StripeModule extends ReactContextBaseJavaModule {
     publicKey = options.getString("publishableKey");
     Log.d(TAG, "init -> publicKey:" + publicKey);
     stripe = new Stripe(getReactApplicationContext(), publicKey);
-    TimeUnit.SECONDS.sleep(5);
+    try{
+      TimeUnit.SECONDS.sleep(5);
+    } catch (InterruptedException exception) {
+      Log.e(TAG, "Err: " + exception);
+    }
+    
   }
 
   @ReactMethod
