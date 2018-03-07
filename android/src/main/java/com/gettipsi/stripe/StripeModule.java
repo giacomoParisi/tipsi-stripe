@@ -143,6 +143,10 @@ public class StripeModule extends ReactContextBaseJavaModule {
               log("(1.6) onActivityResult: token != null, resolving promise!");
               payPromise.resolve(convertTokenToWritableMap(token));
             }
+          } else if(resultCode == Activity.RESULT_CANCELED) {
+            log("(1.8) onActivityResult: resultCode == Activity.RESULT_CANCELED");
+          } else {
+            log("(1.9) onActivityResult: resultCode == " + resultCode);
           }
         } else {
           log("(1.7) payPromise != null || requestCode != LOAD_FULL_WALLET_REQUEST_CODE");
