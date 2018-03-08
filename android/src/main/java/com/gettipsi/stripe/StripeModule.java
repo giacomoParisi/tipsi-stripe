@@ -198,14 +198,14 @@ public class StripeModule extends ReactContextBaseJavaModule {
     }
     if (googleApiClient != null && googleApiClient.isConnected()) {
       log("(4.2) googleApiClient != null && googleApiClient.isConnected()");
-      checkAndroidPayAvaliable(googleApiClient, promise);
+      checkAndroidPayAvaliable(promise);
     } else if (googleApiClient != null && !googleApiClient.isConnected()) {
       log("(4.3) googleApiClient != null && !googleApiClient.isConnected()");
       googleApiClient.registerConnectionCallbacks(new GoogleApiClient.ConnectionCallbacks() {
         @Override
         public void onConnected(@Nullable Bundle bundle) {
           log("(4.4) onConnected()");
-          checkAndroidPayAvaliable(googleApiClient, promise);
+          checkAndroidPayAvaliable(promise);
         }
 
         @Override
@@ -222,7 +222,7 @@ public class StripeModule extends ReactContextBaseJavaModule {
           @Override
           public void onConnected(@Nullable Bundle bundle) {
             log("(4.7) onConnected()");
-            checkAndroidPayAvaliable(googleApiClient, promise);
+            checkAndroidPayAvaliable(promise);
           }
 
           @Override
@@ -634,16 +634,17 @@ public class StripeModule extends ReactContextBaseJavaModule {
     return IsReadyToPayRequest.newBuilder().build();
   }
 
-  private void checkAndroidPayAvaliable(final GoogleApiClient client, final Promise promise) {
+  private void checkAndroidPayAvaliable(final Promise promise) {
     log("(18) checkAndroidPayAvaliable");
 
-    Wallet.Payments.isReadyToPay(client, doIsReadyToPayRequest()).setResultCallback(
+    Wallet.Payments.isReadyToPay(googleApiClient, doIsReadyToPayRequest()).setResultCallback(
       new ResultCallback<BooleanResult>() {
         @Override
         public void onResult(@NonNull BooleanResult booleanResult) {
-        log("(18.1) Wallet.Payments.isReadyToPay: onResult()");
+          log("(18.1) Wallet.Payments.isReadyToPay: onResult()");
           if (booleanResult.getStatus().isSuccess()) {
             log("(18.2) booleanResult.getStatus().isSuccess()");
+
             promise.resolve(booleanResult.getValue());
           } else {
             log("(18.3) !(booleanResult.getStatus().isSuccess())");
@@ -652,6 +653,8 @@ public class StripeModule extends ReactContextBaseJavaModule {
           }
         }
       });
+    googleApiClient = null;
+    log("(18.3) googleApiClient = null ");
   }
 
   private void startAndroidPay(final ReadableMap map) {
