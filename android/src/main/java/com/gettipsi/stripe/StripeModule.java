@@ -326,6 +326,8 @@ public class StripeModule extends ReactContextBaseJavaModule {
   public void paymentRequestWithAndroidPay(final ReadableMap map, final Promise promise) {
     log("(8.0) paymentRequestWithAndroidPay()");
 
+    googleApiClient = null;
+
     if (getCurrentActivity() != null) {
       log("(8.1) paymentRequestWithAndroidPay(): getCurrentActivity() != null");
       payPromise = promise;
