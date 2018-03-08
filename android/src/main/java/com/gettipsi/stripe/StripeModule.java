@@ -187,9 +187,22 @@ public class StripeModule extends ReactContextBaseJavaModule {
     stripe = new Stripe(getReactApplicationContext(), publicKey);
   }
 
+  private static String getGoogleApiClientStatus(GoogleApiClient gac) {
+    if(gac != null) {
+      if(gac.isConnected()) {
+        return "GAC:Connected";
+      } else if(gac.isConnecting()) {
+        return "Gac:isConnecting";
+      }
+    }
+
+    return "GAC:null";
+  }
+
   @ReactMethod
   public void deviceSupportsAndroidPay(final Promise promise) {
     log("(4.0) deviceSupportsAndroidPay()");
+    log("(4.01)" + getGoogleApiClientStatus(googleApiClient));
 
     if (!isPlayServicesAvailable()) {
       log("(4.1) !isPlayServicesAvailable()");
@@ -214,7 +227,9 @@ public class StripeModule extends ReactContextBaseJavaModule {
           promise.reject(TAG, "onConnectionSuspended i = " + i);
         }
       });
-      googleApiClient.connect();
+      if(!googleApiClient.isConnected() && !googleApiClient.isConnecting()) {
+        googleApiClient.connect();
+      }
     } else if (googleApiClient == null && getCurrentActivity() != null) {
       log("(4.6) googleApiClient == null && getCurrentActivity() != null");
       googleApiClient = new GoogleApiClient.Builder(getCurrentActivity())
@@ -487,6 +502,8 @@ public class StripeModule extends ReactContextBaseJavaModule {
 
   private void startApiClientAndAndroidPay(final Activity activity, final ReadableMap map) {
     log("(11.0) startApiClientAndAndroidPay()");
+    log("(11.1)" + getGoogleApiClientStatus(googleApiClient));
+
 
     if (googleApiClient != null && googleApiClient.isConnected()) {
       log("(11.1) googleApiClient != null && googleApiClient.isConnected()");
@@ -525,6 +542,8 @@ public class StripeModule extends ReactContextBaseJavaModule {
 
   private void showAndroidPay(final ReadableMap map) {
     log("(12)  showAndroidPay()");
+    log("(12.1)" + getGoogleApiClientStatus(googleApiClient));
+
 
     androidPayParams = map;
     final String estimatedTotalPrice = map.getString(TOTAL_PRICE);
@@ -593,6 +612,8 @@ public class StripeModule extends ReactContextBaseJavaModule {
 
   private void handleLoadMascedWaletRequest(int resultCode, Intent data) {
     log("(16) handleLoadMascedWaletRequest()");
+    log("(16.01)" + getGoogleApiClientStatus(googleApiClient));
+
 
     if (resultCode == Activity.RESULT_OK) {
       log("(16.1) resultCode == Activity.RESULT_OK");
@@ -636,6 +657,7 @@ public class StripeModule extends ReactContextBaseJavaModule {
 
   private void checkAndroidPayAvaliable(final GoogleApiClient client, final Promise promise) {
     log("(18) checkAndroidPayAvaliable");
+    log("(18.01)" + getGoogleApiClientStatus(googleApiClient));
 
     Wallet.Payments.isReadyToPay(client, doIsReadyToPayRequest()).setResultCallback(
       new ResultCallback<BooleanResult>() {
@@ -656,6 +678,8 @@ public class StripeModule extends ReactContextBaseJavaModule {
 
   private void startAndroidPay(final ReadableMap map) {
     log("(19) startAndroidPay()");
+    log("(19.01)" + getGoogleApiClientStatus(googleApiClient));
+
 
     Wallet.Payments.isReadyToPay(googleApiClient, doIsReadyToPayRequest()).setResultCallback(
       new ResultCallback<BooleanResult>() {
