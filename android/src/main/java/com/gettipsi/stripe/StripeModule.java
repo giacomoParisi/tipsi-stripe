@@ -29,6 +29,7 @@ import com.google.android.gms.common.GoogleApiAvailability;
 import com.google.android.gms.common.api.BooleanResult;
 import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.common.api.ResultCallback;
+import com.google.android.gms.common.api.Status;
 import com.google.android.gms.wallet.Cart;
 import com.google.android.gms.wallet.FullWallet;
 import com.google.android.gms.wallet.FullWalletRequest;
@@ -44,14 +45,8 @@ import com.google.android.gms.identity.intents.model.UserAddress;
 import com.google.android.gms.identity.intents.model.CountrySpecification;
 import com.stripe.android.BuildConfig;
 import com.stripe.android.SourceCallback;
-import com.google.android.gms.identity.intents.model.CountrySpecification;
 import com.stripe.android.Stripe;
 import com.stripe.android.TokenCallback;
-import com.stripe.android.exception.APIConnectionException;
-import com.stripe.android.exception.APIException;
-import com.stripe.android.exception.AuthenticationException;
-import com.stripe.android.exception.CardException;
-import com.stripe.android.exception.InvalidRequestException;
 import com.stripe.android.model.Address;
 import com.stripe.android.model.BankAccount;
 import com.stripe.android.model.Card;
@@ -65,7 +60,6 @@ import com.stripe.android.model.Token;
 
 import java.util.Map;
 
-import java.util.List;
 import java.util.ArrayList;
 
 public class StripeModule extends ReactContextBaseJavaModule {
@@ -80,7 +74,7 @@ public class StripeModule extends ReactContextBaseJavaModule {
 
   private static final boolean IS_LOGGING_ENABLED = true;
 
-  //androidPayParams keys:
+  //mAndroidPayParams keys:
   private static final String ANDROID_PAY_MODE = "androidPayMode";
   private static final String PRODUCTION = "production";
   private static final String CURRENCY_CODE = "currency_code";
@@ -93,67 +87,54 @@ public class StripeModule extends ReactContextBaseJavaModule {
 
   private int mEnvironment = WalletConstants.ENVIRONMENT_PRODUCTION;
 
-  private static StripeModule instance = null;
+  private static StripeModule sInstance = null;
 
   public static StripeModule getInstance() {
-    return instance;
+    return sInstance;
   }
 
   public Stripe getStripe() {
-    return stripe;
+    return mStripe;
   }
 
   @Nullable
-  private Promise createSourcePromise;
-  private Promise payPromise;
+  private Promise mCreateSourcePromise;
+  private Promise mPayPromise;
 
   @Nullable
-  private Source createdSource;
+  private Source mCreatedSource;
 
-  private String publicKey;
-  private Stripe stripe;
-  private GoogleApiClient googleApiClient;
+  private String mPublicKey;
+  private Stripe mStripe;
+  private GoogleApiClient mGoogleApiClient;
 
-  private ReadableMap androidPayParams;
+  private ReadableMap mAndroidPayParams;
 
   private final ActivityEventListener mActivityEventListener = new BaseActivityEventListener() {
 
     @Override
     public void onActivityResult(Activity activity, int requestCode, int resultCode, Intent data) {
-      log("(1.0) onActivityResult()");
-
-      if (payPromise != null) {
-        log("(1.1) payPromise != null");
+      if (mPayPromise != null) {
         if (requestCode == LOAD_MASKED_WALLET_REQUEST_CODE) { // Unique, identifying constant
-          log("(1.2) requestCode == LOAD_MASKED_WALLET_REQUEST_CODE");
           handleLoadMascedWaletRequest(resultCode, data);
-
         } else if (requestCode == LOAD_FULL_WALLET_REQUEST_CODE) {
-          log("(1.3) requestCode == LOAD_FULL_WALLET_REQUEST_CODE");
           if (resultCode == Activity.RESULT_OK) {
-            log("(1.4) onActivityResult: LOAD_FULL_WALLET -> RESULT_OK");
             FullWallet fullWallet = data.getParcelableExtra(WalletConstants.EXTRA_FULL_WALLET);
             String tokenJSON = fullWallet.getPaymentMethodToken().getToken();
             Token token = Token.fromString(tokenJSON);
             if (token == null) {
               // Log the error and notify Stripe help
-              log("(1.5) onActivityResult: failed to create token from JSON string.");
-              payPromise.reject("JsonParsingError", "Failed to create token from JSON string.");
+              mPayPromise.reject("JsonParsingError", "Failed to create token from JSON string.");
             } else {
-              log("(1.6) onActivityResult: token != null, resolving promise!");
-              payPromise.resolve(convertTokenToWritableMap(token));
+              mPayPromise.resolve(convertTokenToWritableMap(token));
             }
           } else if(resultCode == Activity.RESULT_CANCELED) {
-            log("(1.8) onActivityResult: resultCode == Activity.RESULT_CANCELED");
           } else {
-            log("(1.9) onActivityResult: resultCode == " + resultCode);
           }
         } else {
-          log("(1.7) payPromise != null || requestCode != LOAD_FULL_WALLET_REQUEST_CODE");
           super.onActivityResult(activity, requestCode, resultCode, data);
         }
       } else {
-        log("(1.8) payPromise == null");
       }
     }
   };
@@ -161,12 +142,11 @@ public class StripeModule extends ReactContextBaseJavaModule {
 
   public StripeModule(ReactApplicationContext reactContext) {
     super(reactContext);
-    log("(2.0) StripeModule()");
 
     // Add the listener for `onActivityResult`
     reactContext.addActivityEventListener(mActivityEventListener);
 
-    instance = this;
+    sInstance = this;
   }
 
   @Override
@@ -176,103 +156,77 @@ public class StripeModule extends ReactContextBaseJavaModule {
 
   @ReactMethod
   public void init(ReadableMap options) {
-    log("(3.0) init()");
-
     if(exist(options, ANDROID_PAY_MODE, PRODUCTION).toLowerCase().equals("test")) {
-      log("(3.1) exist(options, ANDROID_PAY_MODE, PRODUCTION).toLowerCase().equals(test)");
       mEnvironment = WalletConstants.ENVIRONMENT_TEST;
     }
-
-    publicKey = options.getString("publishableKey");
-    stripe = new Stripe(getReactApplicationContext(), publicKey);
-  }
-
-  private static String getGoogleApiClientStatus(GoogleApiClient gac) {
-    if(gac != null) {
-      if(gac.isConnected()) {
-        return "GAC:Connected";
-      } else if(gac.isConnecting()) {
-        return "Gac:isConnecting";
-      }
-    }
-
-    return "GAC:null";
+    mPublicKey = options.getString("publishableKey");
+    mStripe = new Stripe(getReactApplicationContext(), mPublicKey);
   }
 
   @ReactMethod
   public void deviceSupportsAndroidPay(final Promise promise) {
-    log("(4.0) deviceSupportsAndroidPay()");
-    log("(4.01)" + getGoogleApiClientStatus(googleApiClient));
-
     if (!isPlayServicesAvailable()) {
-      log("(4.1) !isPlayServicesAvailable()");
       promise.reject(TAG, "Play services are not available!");
       return;
     }
-    if (googleApiClient != null && googleApiClient.isConnected()) {
-      log("(4.2) googleApiClient != null && googleApiClient.isConnected()");
-      checkAndroidPayAvaliable(googleApiClient, promise);
-    } else if (googleApiClient != null && !googleApiClient.isConnected()) {
-      log("(4.3) googleApiClient != null && !googleApiClient.isConnected()");
-      googleApiClient.registerConnectionCallbacks(new GoogleApiClient.ConnectionCallbacks() {
-        @Override
-        public void onConnected(@Nullable Bundle bundle) {
-          log("(4.4) onConnected()");
-          checkAndroidPayAvaliable(googleApiClient, promise);
-        }
 
-        @Override
-        public void onConnectionSuspended(int i) {
-          log("(4.5) onConnectionSuspended()");
-          promise.reject(TAG, "onConnectionSuspended i = " + i);
-        }
-      });
-      if(!googleApiClient.isConnected() && !googleApiClient.isConnecting()) {
-        googleApiClient.connect();
-      }
-    } else if (googleApiClient == null && getCurrentActivity() != null) {
-      log("(4.6) googleApiClient == null && getCurrentActivity() != null");
-      googleApiClient = new GoogleApiClient.Builder(getCurrentActivity())
-        .addConnectionCallbacks(new GoogleApiClient.ConnectionCallbacks() {
-          @Override
-          public void onConnected(@Nullable Bundle bundle) {
-            log("(4.7) onConnected()");
-            checkAndroidPayAvaliable(googleApiClient, promise);
-          }
+    connectIfNeededAndCheckIsWalletReadyToPay(promise);
+  }
 
-          @Override
-          public void onConnectionSuspended(int i) {
-            log("(4.8) onConnectionSuspended()");
-            promise.reject(TAG, "onConnectionSuspended i = " + i);
-          }
-        })
-        .addOnConnectionFailedListener(new GoogleApiClient.OnConnectionFailedListener() {
-          @Override
-          public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
-            log("(4.9) onConnectionFailed()");
-            promise.reject(TAG, "onConnectionFailed: " + connectionResult.getErrorMessage());
-          }
-        })
-        .addApi(Wallet.API, new Wallet.WalletOptions.Builder()
-          .setEnvironment(mEnvironment)
-          .setTheme(WalletConstants.THEME_LIGHT)
-          .build())
-        .build();
-      googleApiClient.connect();
+  private void connectIfNeededAndCheckIsWalletReadyToPay(final Promise promise) {
+    Activity activity = getCurrentActivity();
+    if(activity == null) {
+      promise.reject(TAG, "Activity is dead");
+    }
+
+    if(mGoogleApiClient == null) {
+      mGoogleApiClient = buildGoogleApiClientWithConnectedCallback(
+              getCurrentActivity(),
+              promise,
+              mEnvironment,
+              new Action<Bundle>() { public void call(Bundle bundle) {
+                isWalletReadyToPay(mGoogleApiClient, promise);
+              }});
+      mGoogleApiClient.connect();
+    } else if(mGoogleApiClient.isConnected()) {
+      isWalletReadyToPay(mGoogleApiClient, promise);
+    } else if(!mGoogleApiClient.isConnected()) {
+      mGoogleApiClient.registerConnectionCallbacks(
+        createConnectionCallbacks(promise, new Action<Bundle>() { public void call(Bundle bundle) {
+          isWalletReadyToPay(mGoogleApiClient, promise);
+        }})
+      );
+      mGoogleApiClient.connect();
     } else {
-      log("(4.10) googleApiClient == null && getCurrentActivity() == null");
       promise.reject(TAG, "Unknown error");
+    }
+  }
+
+  private void connectIfNeededAndCheckIsWalletReadyToPayAndLoadMaskedWallet(final ReadableMap map) {
+    final Activity activity = getCurrentActivity();
+    if (activity == null) {
+      return;
+    }
+
+    if (mGoogleApiClient != null && mGoogleApiClient.isConnected()) {
+      checkIsWalletReadyToPayAndLoadMaskedWallet(mGoogleApiClient, mPayPromise, map);
+    } else {
+      mGoogleApiClient = buildGoogleApiClientWithConnectedCallback(
+              activity,
+              mPayPromise,
+              mEnvironment,
+              new Action<Bundle>() { public void call(Bundle bundle) {
+                checkIsWalletReadyToPayAndLoadMaskedWallet(mGoogleApiClient, mPayPromise, map);
+              }});
+      mGoogleApiClient.connect();
     }
   }
 
   @ReactMethod
   public void createTokenWithCard(final ReadableMap cardData, final Promise promise) {
-    log("(5.0) createTokenWithCard()");
-
     try {
-
-      stripe.createToken(createCard(cardData),
-        publicKey,
+      mStripe.createToken(createCard(cardData),
+              mPublicKey,
         new TokenCallback() {
           public void onSuccess(Token token) {
             promise.resolve(convertTokenToWritableMap(token));
@@ -290,11 +244,9 @@ public class StripeModule extends ReactContextBaseJavaModule {
 
   @ReactMethod
   public void createTokenWithBankAccount(final ReadableMap accountData, final Promise promise) {
-    log("(6.0) createTokenWithBankAccount()");
-
     try {
-      stripe.createBankAccountToken(createBankAccount(accountData),
-        publicKey,
+      mStripe.createBankAccountToken(createBankAccount(accountData),
+              mPublicKey,
         null,
         new TokenCallback() {
           public void onSuccess(Token token) {
@@ -313,10 +265,8 @@ public class StripeModule extends ReactContextBaseJavaModule {
 
   @ReactMethod
   public void paymentRequestWithCardForm(ReadableMap unused, final Promise promise) {
-    log("(7.0) paymentRequestWithCardForm()");
-
     if (getCurrentActivity() != null) {
-      final AddCardDialogFragment cardDialog = AddCardDialogFragment.newInstance(publicKey);
+      final AddCardDialogFragment cardDialog = AddCardDialogFragment.newInstance(mPublicKey);
       cardDialog.setPromise(promise);
       cardDialog.show(getCurrentActivity().getFragmentManager(), "AddNewCard");
     }
@@ -324,21 +274,16 @@ public class StripeModule extends ReactContextBaseJavaModule {
 
   @ReactMethod
   public void paymentRequestWithAndroidPay(final ReadableMap map, final Promise promise) {
-    log("(8.0) paymentRequestWithAndroidPay()");
-
-    if (getCurrentActivity() != null) {
-      log("(8.1) paymentRequestWithAndroidPay(): getCurrentActivity() != null");
-      payPromise = promise;
-      startApiClientAndAndroidPay(getCurrentActivity(), map);
-    } else {
-      log("(8.2) paymentRequestWithAndroidPay(): getCurrentActivity() == null");
+    if (getCurrentActivity() == null) {
+      return;
     }
+
+    mPayPromise = promise;
+    connectIfNeededAndCheckIsWalletReadyToPayAndLoadMaskedWallet(map);
   }
 
   @ReactMethod
   public void createSourceWithParams(final ReadableMap options, final Promise promise) {
-    log("(9.0) createSourceWithParams()");
-
     String sourceType = options.getString("type");
     SourceParams sourceParams = null;
     switch (sourceType) {
@@ -402,7 +347,7 @@ public class StripeModule extends ReactContextBaseJavaModule {
 
     }
 
-    stripe.createSource(sourceParams, new SourceCallback() {
+    mStripe.createSource(sourceParams, new SourceCallback() {
       @Override
       public void onError(Exception error) {
         promise.reject(error);
@@ -414,8 +359,8 @@ public class StripeModule extends ReactContextBaseJavaModule {
           if (getCurrentActivity() == null) {
             promise.reject(TAG, "Cannot start payment process with no current activity");
           } else {
-            createSourcePromise = promise;
-            createdSource = source;
+            mCreateSourcePromise = promise;
+            mCreatedSource = source;
             String redirectUrl = source.getRedirect().getUrl();
             Intent browserIntent = new Intent(getCurrentActivity(), OpenBrowserActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -434,51 +379,49 @@ public class StripeModule extends ReactContextBaseJavaModule {
   }
 
   void processRedirect(@Nullable Uri redirectData) {
-    log("(10.0) processRedirect()");
+    if (mCreatedSource == null || mCreateSourcePromise == null) {
 
-    if (createdSource == null || createSourcePromise == null) {
-      log("(10.1) Received redirect uri but there is no source to process");
       return;
     }
 
     if (redirectData == null) {
-      log("(10.2) Received null `redirectData`");
-      createSourcePromise.reject(TAG, "Cancelled");
-      createdSource = null;
-      createSourcePromise = null;
+
+      mCreateSourcePromise.reject(TAG, "Cancelled");
+      mCreatedSource = null;
+      mCreateSourcePromise = null;
       return;
     }
 
     final String clientSecret = redirectData.getQueryParameter("client_secret");
-    if (!createdSource.getClientSecret().equals(clientSecret)) {
-      createSourcePromise.reject(TAG, "Received redirect uri but there is no source to process");
-      createdSource = null;
-      createSourcePromise = null;
+    if (!mCreatedSource.getClientSecret().equals(clientSecret)) {
+      mCreateSourcePromise.reject(TAG, "Received redirect uri but there is no source to process");
+      mCreatedSource = null;
+      mCreateSourcePromise = null;
       return;
     }
 
     final String sourceId = redirectData.getQueryParameter("source");
-    if (!createdSource.getId().equals(sourceId)) {
-      createSourcePromise.reject(TAG, "Received wrong source id in redirect uri");
-      createdSource = null;
-      createSourcePromise = null;
+    if (!mCreatedSource.getId().equals(sourceId)) {
+      mCreateSourcePromise.reject(TAG, "Received wrong source id in redirect uri");
+      mCreatedSource = null;
+      mCreateSourcePromise = null;
       return;
     }
 
-    final Promise promise = createSourcePromise;
+    final Promise promise = mCreateSourcePromise;
 
     // Nulls those properties to avoid processing them twice
-    createdSource = null;
-    createSourcePromise = null;
+    mCreatedSource = null;
+    mCreateSourcePromise = null;
 
     new AsyncTask<Void, Void, Void>() {
       @Override
       protected Void doInBackground(Void... voids) {
         Source source = null;
         try {
-          source = stripe.retrieveSourceSynchronous(sourceId, clientSecret);
+          source = mStripe.retrieveSourceSynchronous(sourceId, clientSecret);
         } catch (Exception e) {
-          log("(10.3) Failed to retrieve source");
+
           return null;
         }
 
@@ -500,70 +443,45 @@ public class StripeModule extends ReactContextBaseJavaModule {
     }.execute();
   }
 
-  private void startApiClientAndAndroidPay(final Activity activity, final ReadableMap map) {
-    log("(11.0) startApiClientAndAndroidPay()");
-    log("(11.1)" + getGoogleApiClientStatus(googleApiClient));
+  private static GoogleApiClient.ConnectionCallbacks createConnectionCallbacks(final Promise promise, final Action<Bundle> onConnected) {
+    return new GoogleApiClient.ConnectionCallbacks() {
+      @Override
+      public void onConnected(@Nullable Bundle bundle) {
+        onConnected.call(bundle);
+      }
 
-
-    if (googleApiClient != null && googleApiClient.isConnected()) {
-      log("(11.1) googleApiClient != null && googleApiClient.isConnected()");
-      startAndroidPay(map);
-    } else {
-      log("(11.2) !(googleApiClient != null && googleApiClient.isConnected())");
-      googleApiClient = new GoogleApiClient.Builder(activity)
-        .addConnectionCallbacks(new GoogleApiClient.ConnectionCallbacks() {
-          @Override
-          public void onConnected(@Nullable Bundle bundle) {
-            log("(11.3) onConnected()");
-            startAndroidPay(map);
-          }
-
-          @Override
-          public void onConnectionSuspended(int i) {
-            log("(11.4) onConnectionSuspended()");
-            payPromise.reject(TAG, "onConnectionSuspended i = " + i);
-          }
-        })
-        .addOnConnectionFailedListener(new GoogleApiClient.OnConnectionFailedListener() {
-          @Override
-          public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
-            log("(11.5) onConnectionFailed()");
-            payPromise.reject(TAG, "onConnectionFailed: " + connectionResult.getErrorMessage());
-          }
-        })
-        .addApi(Wallet.API, new Wallet.WalletOptions.Builder()
-          .setEnvironment(mEnvironment)
-          .setTheme(WalletConstants.THEME_LIGHT)
-          .build())
-        .build();
-      googleApiClient.connect();
-    }
+      @Override
+      public void onConnectionSuspended(int i) {
+        promise.reject(TAG, "onConnectionSuspended i = " + i);
+      }
+    };
   }
 
-  private void showAndroidPay(final ReadableMap map) {
-    log("(12)  showAndroidPay()");
-    log("(12.1)" + getGoogleApiClientStatus(googleApiClient));
-
-
-    androidPayParams = map;
-    final String estimatedTotalPrice = map.getString(TOTAL_PRICE);
-    final String currencyCode = map.getString(CURRENCY_CODE);
-    final Boolean shippingAddressRequired = exist(map, SHIPPING_ADDRESS_REQUIRED, true);
-    final ArrayList<CountrySpecification> allowedCountries = getAllowedShippingCountries(map);
-    final MaskedWalletRequest maskedWalletRequest = createWalletRequest(estimatedTotalPrice, currencyCode, shippingAddressRequired, allowedCountries);
-    Wallet.Payments.loadMaskedWallet(googleApiClient, maskedWalletRequest, LOAD_MASKED_WALLET_REQUEST_CODE);
+  private static GoogleApiClient buildGoogleApiClientWithConnectedCallback(Activity activity, final Promise promise, int env, final Action<Bundle> onConnected) {
+    GoogleApiClient googleApiClient = new GoogleApiClient.Builder(activity)
+      .addConnectionCallbacks(createConnectionCallbacks(promise, onConnected))
+      .addOnConnectionFailedListener(new GoogleApiClient.OnConnectionFailedListener() {
+        @Override
+        public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
+          promise.reject(TAG, "onConnectionFailed: " + connectionResult.getErrorMessage());
+        }
+      })
+      .addApi(Wallet.API, new Wallet.WalletOptions.Builder()
+              .setEnvironment(env)
+              .setTheme(WalletConstants.THEME_LIGHT)
+              .build())
+      .build();
+    return googleApiClient;
   }
 
   private MaskedWalletRequest createWalletRequest(final String estimatedTotalPrice, final String currencyCode, final Boolean shippingAddressRequired, final ArrayList<CountrySpecification> countries) {
-    log("(13) createWalletRequest(), publicKey:" + publicKey);
-
     final MaskedWalletRequest maskedWalletRequest = MaskedWalletRequest.newBuilder()
 
       // Request credit card tokenization with Stripe by specifying tokenization parameters:
       .setPaymentMethodTokenizationParameters(PaymentMethodTokenizationParameters.newBuilder()
         .setPaymentMethodTokenizationType(PaymentMethodTokenizationType.PAYMENT_GATEWAY)
         .addParameter("gateway", "stripe")
-        .addParameter("stripe:publishableKey", publicKey)
+        .addParameter("stripe:publishableKey", mPublicKey)
         .addParameter("stripe:version", BuildConfig.VERSION_NAME)
         .build())
       // You want the shipping address:
@@ -591,7 +509,7 @@ public class StripeModule extends ReactContextBaseJavaModule {
   }
 
   private boolean isPlayServicesAvailable() {
-    log("(14) isPlayServicesAvailable()");
+
 
     GoogleApiAvailability googleAPI = GoogleApiAvailability.getInstance();
     int result = googleAPI.isGooglePlayServicesAvailable(getCurrentActivity());
@@ -602,8 +520,6 @@ public class StripeModule extends ReactContextBaseJavaModule {
   }
 
   private void androidPayUnavaliableDialog() {
-    log("(15) androidPayUnavaliableDialog()");
-
     new AlertDialog.Builder(getCurrentActivity())
       .setMessage(R.string.gettipsi_android_pay_unavaliable)
       .setPositiveButton(android.R.string.ok, null)
@@ -611,19 +527,15 @@ public class StripeModule extends ReactContextBaseJavaModule {
   }
 
   private void handleLoadMascedWaletRequest(int resultCode, Intent data) {
-    log("(16) handleLoadMascedWaletRequest()");
-    log("(16.01)" + getGoogleApiClientStatus(googleApiClient));
-
-
     if (resultCode == Activity.RESULT_OK) {
-      log("(16.1) resultCode == Activity.RESULT_OK");
+
       MaskedWallet maskedWallet = data.getParcelableExtra(WalletConstants.EXTRA_MASKED_WALLET);
 
       final Cart.Builder cartBuilder = Cart.newBuilder()
-        .setCurrencyCode(androidPayParams.getString(CURRENCY_CODE))
-        .setTotalPrice(androidPayParams.getString(TOTAL_PRICE));
+        .setCurrencyCode(mAndroidPayParams.getString(CURRENCY_CODE))
+        .setTotalPrice(mAndroidPayParams.getString(TOTAL_PRICE));
 
-      final ReadableArray lineItems = androidPayParams.getArray(LINE_ITEMS);
+      final ReadableArray lineItems = mAndroidPayParams.getArray(LINE_ITEMS);
       if (lineItems != null) {
         for (int i = 0; i < lineItems.size(); i++) {
           final ReadableMap lineItem = lineItems.getMap(i);
@@ -642,72 +554,53 @@ public class StripeModule extends ReactContextBaseJavaModule {
         .setGoogleTransactionId(maskedWallet.getGoogleTransactionId())
         .build();
 
-      Wallet.Payments.loadFullWallet(googleApiClient, fullWalletRequest, LOAD_FULL_WALLET_REQUEST_CODE);
+      Wallet.Payments.loadFullWallet(mGoogleApiClient, fullWalletRequest, LOAD_FULL_WALLET_REQUEST_CODE);
     } else {
-      log("(16.2) resultCode != Activity.RESULT_OK");
-      payPromise.reject(PURCHASE_CANCELLED, "Purchase was cancelled");
+      mPayPromise.reject(PURCHASE_CANCELLED, "Purchase was cancelled");
     }
   }
 
-  private IsReadyToPayRequest doIsReadyToPayRequest() {
-    log("(17) doIsReadyToPayRequest()");
-
-    return IsReadyToPayRequest.newBuilder().build();
+  private static void isWalletReadyToPay(final GoogleApiClient googleApiClient, final Promise promise) {
+    isWalletReadyToPay(
+            googleApiClient,
+            new ResultCallback<BooleanResult>() { public void onResult(@NonNull BooleanResult result) {
+              if(result.getStatus().isSuccess()) {
+                promise.resolve(result.getValue());
+              } else {
+                promise.reject(TAG, result.getStatus().getStatusMessage());
+              }
+            }});
   }
 
-  private void checkAndroidPayAvaliable(final GoogleApiClient client, final Promise promise) {
-    log("(18) checkAndroidPayAvaliable");
-    log("(18.01)" + getGoogleApiClientStatus(googleApiClient));
-
-    Wallet.Payments.isReadyToPay(client, doIsReadyToPayRequest()).setResultCallback(
-      new ResultCallback<BooleanResult>() {
-        @Override
-        public void onResult(@NonNull BooleanResult booleanResult) {
-        log("(18.1) Wallet.Payments.isReadyToPay: onResult()");
-          if (booleanResult.getStatus().isSuccess()) {
-            log("(18.2) booleanResult.getStatus().isSuccess()");
-            promise.resolve(booleanResult.getValue());
-          } else {
-            log("(18.3) !(booleanResult.getStatus().isSuccess())");
-            // Error making isReadyToPay call
-            promise.reject(TAG, booleanResult.getStatus().getStatusMessage());
-          }
-        }
-      });
+  private static void isWalletReadyToPay(GoogleApiClient gac, ResultCallback<BooleanResult> callback) {
+    Wallet.Payments.isReadyToPay(gac, IsReadyToPayRequest.newBuilder().build()).setResultCallback(callback);
   }
 
-  private void startAndroidPay(final ReadableMap map) {
-    log("(19) startAndroidPay()");
-    log("(19.01)" + getGoogleApiClientStatus(googleApiClient));
-
-
-    Wallet.Payments.isReadyToPay(googleApiClient, doIsReadyToPayRequest()).setResultCallback(
-      new ResultCallback<BooleanResult>() {
-        @Override
-        public void onResult(@NonNull BooleanResult booleanResult) {
-          log("(19.1) Wallet.Payments.isReadyToPay: onResult()");
-          if (booleanResult.getStatus().isSuccess()) {
-            log("(19.2) booleanResult.getStatus().isSuccess()");
-            if (booleanResult.getValue()) {
-              log("(19.3) booleanResult.getValue()");
-              // TODO Work only in few countries. I don't now how test it in our countries.
-              showAndroidPay(map);
-            } else {
-              log("(19.4) !(booleanResult.getStatus().isSuccess())");
-              // Hide Android Pay buttons, show a message that Android Pay
-              // cannot be used yet, and display a traditional checkout button
-              androidPayUnavaliableDialog();
-              payPromise.reject(TAG, "Android Pay unavaliable");
-            }
-          } else {
-            // Error making isReadyToPay call
-            log("(19.5) !(booleanResult.getStatus().isSuccess())");
-            androidPayUnavaliableDialog();
-            payPromise.reject(TAG, "Error making isReadyToPay call");
-          }
-        }
-      }
-    );
+  private void checkIsWalletReadyToPayAndLoadMaskedWallet(final GoogleApiClient gac, final Promise promise, final ReadableMap map) {
+    isWalletReadyToPay(
+            gac,
+            new ResultCallback<BooleanResult>() {
+              @Override
+              public void onResult(@NonNull BooleanResult result) {
+                if (result.getStatus().isSuccess()) {
+                  if (result.getValue()) {
+                    mAndroidPayParams = map;
+                    final String estimatedTotalPrice = map.getString(TOTAL_PRICE);
+                    final String currencyCode = map.getString(CURRENCY_CODE);
+                    final Boolean shippingAddressRequired = exist(map, SHIPPING_ADDRESS_REQUIRED, true);
+                    final ArrayList<CountrySpecification> allowedCountries = getAllowedShippingCountries(map);
+                    final MaskedWalletRequest maskedWalletRequest = createWalletRequest(estimatedTotalPrice, currencyCode, shippingAddressRequired, allowedCountries);
+                    Wallet.Payments.loadMaskedWallet(gac, maskedWalletRequest, LOAD_MASKED_WALLET_REQUEST_CODE);
+                  } else {
+                    androidPayUnavaliableDialog();
+                    promise.reject(TAG, "Android Pay unavaliable");
+                  }
+                } else {
+                  androidPayUnavaliableDialog();
+                  promise.reject(TAG, "Error making isReadyToPay call");
+                }
+              }
+            });
   }
 
   private Card createCard(final ReadableMap cardData) {
@@ -913,7 +806,7 @@ public class StripeModule extends ReactContextBaseJavaModule {
     } else if (argumentClass == WritableNativeArray.class) {
       map.putArray(key, (WritableNativeArray) object);
     } else {
-      log("Can't map "+ key + "value of " + argumentClass.getSimpleName() + " to any valid js type,");
+
     }
   }
 
@@ -1048,5 +941,9 @@ public class StripeModule extends ReactContextBaseJavaModule {
     if(IS_LOGGING_ENABLED) {
       Log.d(TAG, msg);
     }
+  }
+
+  private interface Action<T> {
+    void call(T t);
   }
 }
