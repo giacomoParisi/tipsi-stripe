@@ -173,10 +173,15 @@ public class StripeModule extends ReactContextBaseJavaModule {
     connectIfNeededAndCheckIsWalletReadyToPay(promise);
   }
 
+  private static void rejectPromiseWithNullActivityError(final Promise promise) {
+    promise.reject(TAG, "Cannot start process with no current activity");
+  }
+
   private void connectIfNeededAndCheckIsWalletReadyToPay(final Promise promise) {
     Activity activity = getCurrentActivity();
     if(activity == null) {
-      promise.reject(TAG, "Activity is dead");
+      rejectPromiseWithNullActivityError(promise);
+      return;
     }
 
     if(mGoogleApiClient == null) {
@@ -204,7 +209,8 @@ public class StripeModule extends ReactContextBaseJavaModule {
 
   private void connectIfNeededAndCheckIsWalletReadyToPayAndLoadMaskedWallet(final ReadableMap map) {
     final Activity activity = getCurrentActivity();
-    if (activity == null) {
+    if(activity == null) {
+      rejectPromiseWithNullActivityError(mPayPromise);
       return;
     }
 
@@ -274,10 +280,6 @@ public class StripeModule extends ReactContextBaseJavaModule {
 
   @ReactMethod
   public void paymentRequestWithAndroidPay(final ReadableMap map, final Promise promise) {
-    if (getCurrentActivity() == null) {
-      return;
-    }
-
     mPayPromise = promise;
     connectIfNeededAndCheckIsWalletReadyToPayAndLoadMaskedWallet(map);
   }
@@ -357,7 +359,7 @@ public class StripeModule extends ReactContextBaseJavaModule {
       public void onSuccess(Source source) {
         if (Source.REDIRECT.equals(source.getFlow())) {
           if (getCurrentActivity() == null) {
-            promise.reject(TAG, "Cannot start payment process with no current activity");
+            rejectPromiseWithNullActivityError(promise);
           } else {
             mCreateSourcePromise = promise;
             mCreatedSource = source;
